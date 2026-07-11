@@ -5,12 +5,13 @@ description: Process redline annotations - a live markup layer over a proxied we
 
 # Site Redliner — Agent Contract
 
-The annotations file (`annotations/<target-host>.json`) is your API. The human's
-browser (via the proxy at localhost:4600) and you both read/write it; the browser
-picks up your changes within ~2 s.
+The annotations file (`annotations/<target-host>.json` in the active workspace)
+is your API. The human's browser (via the proxy at localhost:4600) and you both
+read/write it; the browser picks up your changes within ~2 s.
 
-**Project workspaces:** if you are working in a project workspace directory (a
-folder holding that project's `config.json` / `annotations/`), check it for a
+**Project workspaces:** the workspace is the server cwd unless `--workspace`
+points elsewhere. If you are working in a project workspace directory (a folder
+holding that project's `config.json` / `annotations/`), check it for a
 `WORKSPACE.md` and read it FIRST — it carries the project-specific rules (target
 auth, repo and PR conventions, ticket/export format, route map) that extend and
 override this generic contract.
@@ -28,7 +29,7 @@ override this generic contract.
   helper:
 
   ```
-  node tools/set-status.mjs --ids R-375,R-377 --status implemented --comment "PR #124"
+  node /path/to/site-redliner/tools/set-status.mjs --ids R-375,R-377 --status implemented --comment "PR #124"
   ```
 
   It GETs the current doc+rev, applies ONLY the ids you name, PUTs with that baseRev, and retries
@@ -105,19 +106,21 @@ Statuses: open → (question ⇄) → approved | edited | rejected → implement
    - The legacy `?__redline=shot` (and `#...`) query-param path still works standalone
      on any page that doesn't rewrite its URL on load; sessionStorage is just the
      activation path that also survives a rewrite.
-3. THEN run `node tools/export-md.js --file annotations/<f>.json` (order matters —
-   the persisted geometry is what makes table numbers match badge numbers).
+3. THEN run `node /path/to/site-redliner/tools/export-md.js --file annotations/<f>.json`
+   from the workspace, or pass `--workspace <dir>` (order matters — the persisted
+   geometry is what makes table numbers match badge numbers).
 4. File the output into your tracker: attach each screenshot, then paste each
    page section (image + table). Add a "Kept (load-bearing)" section if items
    were deliberately rejected as load-bearing.
 
 ## Seeding audits or ticket backlogs
 
-- Slop-audit format: `node tools/import-audit.js --findings <findings-data.js>
-  --triage <export.json> --i18n <i18n-map.js> --source-prefix <name>`. `--triage`
-  also accepts a review tool's Export JSON directly (the decision/finalText
-  shape) — the importer normalizes it (decision→status, finalText→editedText),
-  so you don't need to convert it first.
+- Slop-audit format: run `node /path/to/site-redliner/tools/import-audit.js
+  --findings <findings-data.js> --triage <export.json> --i18n <i18n-map.js>
+  --source-prefix <name>` from the workspace, or pass `--workspace <dir>`.
+  `--triage` also accepts a review tool's Export JSON directly (the
+  decision/finalText shape) — the importer normalizes it (decision→status,
+  finalText→editedText), so you don't need to convert it first.
 - Anything else (e.g. ticket tables): write annotations directly into the
   file following the schema — source = the ticket id, kind = proposal, status = open.
   Unknown page? Leave route/page null; it appears in the panel's Unassigned bucket.

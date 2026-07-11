@@ -133,23 +133,50 @@ function importFindings(opts) {
   return { imported, skipped, total: doc.annotations.length, unmapped, statusCounts };
 }
 
-function main() {
-  const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i > -1 ? process.argv[i + 1] : d; };
-  const findingsPath = arg("findings");
+function arg(argv, n, d) {
+  const i = argv.indexOf("--" + n);
+  return i > -1 ? argv[i + 1] : d;
+}
+
+function resolveWorkspace(value, cwd) {
+  return path.resolve(cwd, value || ".");
+}
+
+function resolveInWorkspace(file, workspace) {
+  return path.isAbsolute(file) ? file : path.join(workspace, file);
+}
+
+function defaultRouteMapPath(workspace) {
+  const workspaceRouteMap = path.join(workspace, "route-map.json");
+  return fs.existsSync(workspaceRouteMap) ? workspaceRouteMap : path.join(__dirname, "route-map.json");
+}
+
+function resolveCliOptions(argv = process.argv, cwd = process.cwd()) {
+  const workspace = resolveWorkspace(arg(argv, "workspace", null), cwd);
+  const findingsPath = arg(argv, "findings");
   if (!findingsPath) {
-    console.error("usage: node tools/import-audit.js --findings <findings-data.js> [--triage export.json] [--i18n i18n_ja.js] [--route-map map.json] [--source-prefix name] [--target url] [--file annotations.json]");
+    return { error: "usage: node tools/import-audit.js --findings <findings-data.js> [--triage export.json] [--i18n i18n_ja.js] [--route-map map.json] [--source-prefix name] [--target url] [--file annotations.json] [--workspace dir]" };
+  }
+  const target = arg(argv, "target", "https://example.com");
+  return {
+    workspace,
+    findingsPath,
+    triagePath: arg(argv, "triage", null),
+    i18nPath: arg(argv, "i18n", null),
+    routeMapPath: arg(argv, "route-map", defaultRouteMapPath(workspace)),
+    sourcePrefix: arg(argv, "source-prefix", "audit"),
+    target,
+    outPath: resolveInWorkspace(arg(argv, "file", path.join("annotations", new URL(target).hostname + ".json")), workspace),
+  };
+}
+
+function main() {
+  const opts = resolveCliOptions();
+  if (opts.error) {
+    console.error(opts.error);
     process.exit(1);
   }
-  const target = arg("target", "https://example.com");
-  const r = importFindings({
-    findingsPath,
-    triagePath: arg("triage", null),
-    i18nPath: arg("i18n", null),
-    routeMapPath: arg("route-map", path.join(__dirname, "route-map.json")),
-    sourcePrefix: arg("source-prefix", "audit"),
-    target,
-    outPath: arg("file", path.join(__dirname, "..", "annotations", new URL(target).hostname + ".json")),
-  });
+  const r = importFindings(opts);
   console.log(`imported: ${r.imported}  skipped(existing): ${r.skipped}  total: ${r.total}`);
   console.log("status counts:", JSON.stringify(r.statusCounts));
   if (r.unmapped.size) {
@@ -159,4 +186,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { loadTriage, loadJaMap, loadWindowScript, importFindings };
+module.exports = { loadTriage, loadJaMap, loadWindowScript, importFindings, resolveCliOptions, defaultRouteMapPath };

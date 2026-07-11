@@ -67,22 +67,46 @@ function buildMarkdown(doc, opts = {}) {
   return { full, pages, unplacedCount: unplaced.length };
 }
 
+function arg(argv, n, d) {
+  const i = argv.indexOf("--" + n);
+  return i > -1 ? argv[i + 1] : d;
+}
+
+function resolveWorkspace(value, cwd) {
+  return path.resolve(cwd, value || ".");
+}
+
+function resolveInWorkspace(file, workspace) {
+  return path.isAbsolute(file) ? file : path.join(workspace, file);
+}
+
+function resolveCliOptions(argv = process.argv, cwd = process.cwd()) {
+  const workspace = resolveWorkspace(arg(argv, "workspace", null), cwd);
+  const fileArg = arg(argv, "file");
+  if (!fileArg) return { error: "usage: node tools/export-md.js --file annotations/<f>.json [--statuses a,b|all] [--out export/redline-export.md] [--workspace dir]" };
+  const statuses = arg(argv, "statuses", "approved,edited,implemented").split(",");
+  const out = arg(argv, "out", path.join(workspace, "export", "redline-export.md"));
+  return {
+    workspace,
+    file: resolveInWorkspace(fileArg, workspace),
+    statuses,
+    out,
+  };
+}
+
 function main() {
-  const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i > -1 ? process.argv[i + 1] : d; };
-  const file = arg("file");
-  if (!file) {
-    console.error("usage: node tools/export-md.js --file annotations/<f>.json [--statuses a,b|all] [--out export/redline-export.md]");
+  const opts = resolveCliOptions();
+  if (opts.error) {
+    console.error(opts.error);
     process.exit(1);
   }
-  const statuses = arg("statuses", "approved,edited,implemented").split(",");
-  const out = arg("out", path.join(__dirname, "..", "export", "redline-export.md"));
-  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
-  const r = buildMarkdown(doc, { statuses });
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, r.full);
-  console.log(`wrote ${out} — ${r.pages.length} page section(s), ${r.unplacedCount} unplaced`);
+  const doc = JSON.parse(fs.readFileSync(opts.file, "utf8"));
+  const r = buildMarkdown(doc, { statuses: opts.statuses });
+  fs.mkdirSync(path.dirname(opts.out), { recursive: true });
+  fs.writeFileSync(opts.out, r.full);
+  console.log(`wrote ${opts.out} — ${r.pages.length} page section(s), ${r.unplacedCount} unplaced`);
   console.log("NOTE: capture shot-mode screenshots BEFORE running this, so persisted rects make numbering match badges.");
 }
 
 if (require.main === module) main();
-module.exports = { buildMarkdown };
+module.exports = { buildMarkdown, resolveCliOptions };

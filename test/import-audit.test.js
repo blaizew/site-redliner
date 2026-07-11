@@ -4,7 +4,7 @@ const assert = require("node:assert");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { loadTriage, loadJaMap, loadWindowScript, importFindings } = require("../tools/import-audit");
+const { loadTriage, loadJaMap, loadWindowScript, importFindings, resolveCliOptions } = require("../tools/import-audit");
 
 const FIX = path.join(__dirname, "..", "fixtures");
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "redline-imp-")), "a.json");
@@ -76,4 +76,36 @@ test("importFindings maps, carries triage, attaches JA, flags unmapped, is idemp
   const r2 = importFindings(opts); // idempotent
   assert.strictEqual(r2.imported, 0);
   assert.strictEqual(r2.skipped, 2);
+});
+
+test("resolveCliOptions route-map precedence: explicit beats workspace beats repo sample", () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "redline-route-map-"));
+  const workspaceMap = path.join(workspace, "route-map.json");
+  const explicitMap = path.join(workspace, "explicit-map.json");
+  fs.writeFileSync(workspaceMap, "{}");
+  fs.writeFileSync(explicitMap, "{}");
+  const findings = path.join(FIX, "findings-mini.js");
+
+  const withExplicit = resolveCliOptions([
+    "node", "tools/import-audit.js",
+    "--workspace", workspace,
+    "--findings", findings,
+    "--route-map", explicitMap,
+  ], "/");
+  assert.strictEqual(withExplicit.routeMapPath, explicitMap);
+
+  const withWorkspace = resolveCliOptions([
+    "node", "tools/import-audit.js",
+    "--workspace", workspace,
+    "--findings", findings,
+  ], "/");
+  assert.strictEqual(withWorkspace.routeMapPath, workspaceMap);
+
+  fs.unlinkSync(workspaceMap);
+  const withRepoFallback = resolveCliOptions([
+    "node", "tools/import-audit.js",
+    "--workspace", workspace,
+    "--findings", findings,
+  ], "/");
+  assert.strictEqual(withRepoFallback.routeMapPath, path.join(__dirname, "..", "tools", "route-map.json"));
 });

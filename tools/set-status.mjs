@@ -20,16 +20,34 @@
 //   --author   thread author (default: claude)
 //   --server   redline server (default: http://localhost:4600)
 
+import fs from "node:fs";
+import path from "node:path";
+
 const argv = {};
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   if (a.startsWith("--")) argv[a.slice(2)] = process.argv[++i];
 }
+function resolveWorkspace(value, cwd) {
+  return path.resolve(cwd, value || ".");
+}
+function defaultServer(argv) {
+  if (argv.server) return argv.server;
+  const workspace = resolveWorkspace(argv.workspace, process.cwd());
+  const cfgPath = path.join(workspace, "config.json");
+  if (fs.existsSync(cfgPath)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+      if (typeof cfg.port === "number" && Number.isFinite(cfg.port)) return "http://localhost:" + cfg.port;
+    } catch {}
+  }
+  return "http://localhost:4600";
+}
 const ids = (argv.ids || "").split(",").map((s) => s.trim()).filter(Boolean);
 const status = argv.status || null;
 const comment = argv.comment || null;
 const author = argv.author || "claude";
-const server = (argv.server || "http://localhost:4600").replace(/\/$/, "");
+const server = defaultServer(argv).replace(/\/$/, "");
 const url = server + "/__redline/annotations";
 const MAX = 12;
 

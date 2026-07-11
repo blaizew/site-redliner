@@ -13,9 +13,18 @@ Requires Node 18+. Nothing to install.
     node server.js --target https://your-site.example.com
     # open http://localhost:4600
 
-Point it at a local dev build instead with `--target http://localhost:5173`.
-Copy `config.example.json` to `config.json` to set defaults once (target, port,
-and your name as `"author"`).
+For a separate project workspace, create a folder anywhere, copy
+`config.example.json` into that folder as `config.json`, edit the target/port/author,
+and run the server from that folder:
+
+    mkdir my-redline-workspace && cd my-redline-workspace
+    cp /path/to/site-redliner/config.example.json config.json
+    node /path/to/site-redliner/server.js
+
+`annotations/` and `export/` are created in the workspace. The clone-and-run path
+above still works: the repo folder is also a valid workspace because
+`config.json`, `annotations/`, and `export/` are gitignored. Point either mode at
+a local dev build with `--target http://localhost:5173`.
 
 ## Using the overlay
 
@@ -34,9 +43,9 @@ boxed — they appear under **Orphaned** at the bottom of the panel instead. Nev
 
 ## Working with your coding agent
 
-Annotations live in `annotations/<target-host>.json` — your agent reads and writes
-that file directly. Tell it: "Read SKILL.md in this repo and process the redline
-annotations." SKILL.md is the full agent contract.
+Annotations live in the workspace at `annotations/<target-host>.json` — your
+agent reads and writes that file directly. Tell it: "Read SKILL.md in this repo
+and process the redline annotations." SKILL.md is the full agent contract.
 
 ## Exporting for review (issue trackers etc.)
 
@@ -51,8 +60,9 @@ annotations." SKILL.md is the full agent contract.
    - The legacy `?__redline=shot` query param (e.g.
      `localhost:4600/app?__redline=shot#/home`) still works directly
      on pages that don't rewrite their URL on load.
-2. `node tools/export-md.js --file annotations/<f>.json` → per-page tables whose
-   numbers match the screenshot badges. Red = remove, orange dashed = edit, green = add.
+2. From the workspace, `node /path/to/site-redliner/tools/export-md.js --file annotations/<f>.json`
+   → per-page tables whose numbers match the screenshot badges. Red = remove,
+   orange dashed = edit, green = add.
 
 ## Notes
 

@@ -58,6 +58,8 @@ annotations/<target>.json  ◀── read/written directly by the agent (the age
 
 ### Folder layout
 
+Data directories (`config.json`, `annotations/`, `export/`, `route-map.json`) live in the workspace (cwd or `--workspace`), not necessarily in the repo.
+
 ```
 site-redliner/
   server.js               # proxy + API, zero-dep
