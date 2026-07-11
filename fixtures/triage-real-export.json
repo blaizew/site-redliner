@@ -1,0 +1,6 @@
+[
+  { "id": "BK1", "screen": "Overview", "location": "header", "decision": "edit", "current": "Seamless global payments", "finalText": "Payments, globally", "note": "shorter" },
+  { "id": "BK2", "screen": "Mystery", "location": "footer", "decision": "reject", "current": "String not in JA map", "finalText": null, "note": "" },
+  { "id": "BK3", "screen": "Overview", "location": "body", "decision": "approve", "current": "Foo", "finalText": "Bar", "note": "" },
+  { "id": "BK4", "screen": "Overview", "location": "body", "decision": "pending", "current": "Baz", "finalText": null, "note": "" }
+]

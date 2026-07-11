@@ -1,0 +1,8 @@
+{
+  "name": "site-redliner",
+  "version": "0.1.0",
+  "description": "Live markup layer over a proxied web app - human + agent collaborative annotation",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/blaizew/site-redliner.git" },
+  "scripts": { "test": "node --test", "start": "node server.js" }
+}

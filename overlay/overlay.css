@@ -1,0 +1,89 @@
+/* Redline overlay. Everything namespaced rl- / __redline to avoid app collisions. */
+#__redline_root { position: absolute; top: 0; left: 0; z-index: 2147483000; font-family: -apple-system, "Segoe UI", sans-serif; }
+#__redline_boxes { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+.rl-box { position: absolute; border: 2px solid #f59e0b; border-radius: 6px; box-sizing: border-box; }
+.rl-badge { position: absolute; top: -11px; left: -11px; min-width: 22px; height: 22px; padding: 0 4px;
+  border-radius: 11px; background: #dc2626; color: #fff; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
+/* live mode: status colors. open splits by kind (needs-human amber vs
+   queued-for-agent blue) to match the panel's pill colors; question moves
+   into the same needs-human amber/orange family. */
+.rl-st-open-proposal    { border-color: #f59e0b; } .rl-st-open-proposal    .rl-badge { background: #f59e0b; }
+.rl-st-question         { border-color: #ea580c; } .rl-st-question         .rl-badge { background: #ea580c; }
+.rl-st-open-instruction { border-color: #38bdf8; } .rl-st-open-instruction .rl-badge { background: #38bdf8; }
+.rl-st-approved    { border-color: #16a34a; } .rl-st-approved    .rl-badge { background: #16a34a; }
+.rl-st-edited      { border-color: #16a34a; border-style: dashed; } .rl-st-edited .rl-badge { background: #16a34a; }
+.rl-st-rejected    { border-color: #9ca3af; opacity: .55; } .rl-st-rejected .rl-badge { background: #9ca3af; }
+.rl-st-implemented { border-color: #2563eb; } .rl-st-implemented .rl-badge { background: #2563eb; }
+.rl-st-verified    { border-color: #0d9488; opacity: .7; } .rl-st-verified .rl-badge { background: #0d9488; }
+.rl-stale          { border-style: dotted; opacity: .7; }
+.rl-flash          { animation: rl-flash 0.4s ease-in-out 3; }
+@keyframes rl-flash { 50% { background: rgba(245, 158, 11, .25); } }
+
+/* shot mode: export action colors — red solid = remove, orange dashed = edit, green = add */
+.rl-act-remove { border-color: #dc2626; } .rl-act-remove .rl-badge { background: #dc2626; }
+.rl-act-edit   { border-color: #ea580c; border-style: dashed; } .rl-act-edit .rl-badge { background: #ea580c; }
+.rl-act-add    { border-color: #16a34a; } .rl-act-add .rl-badge { background: #16a34a; }
+
+/* FAB + panel */
+#__redline_fab { position: fixed; right: 16px; bottom: 16px; z-index: 2147483001; width: 44px; height: 44px;
+  border-radius: 22px; background: #111827; color: #fff; border: none; font-size: 18px; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+#__redline_panel { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; z-index: 2147483002;
+  background: #111827; color: #e5e7eb; font-size: 13px; display: flex; flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0,0,0,.4); }
+#__redline_panel.rl-hidden, #__redline_pageindex.rl-hidden { display: none; }
+.rl-panel-head { padding: 10px 12px; border-bottom: 1px solid #374151; display: flex; gap: 8px; align-items: center; }
+.rl-panel-head input { flex: 1; background: #1f2937; border: 1px solid #374151; color: #e5e7eb;
+  border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.rl-counts { padding: 6px 12px; color: #9ca3af; font-size: 11px; border-bottom: 1px solid #374151; }
+.rl-list { flex: 1; overflow-y: auto; }
+.rl-item { padding: 8px 12px; border-bottom: 1px solid #1f2937; cursor: pointer; display: flex; gap: 8px; align-items: flex-start; }
+.rl-item.rl-sel { background: #1f2937; outline: 2px solid #4b5563; outline-offset: -2px; }
+.rl-item .rl-num { color: #9ca3af; min-width: 22px; font-weight: 700; }
+.rl-txtwrap { flex: 1; min-width: 0; }
+.rl-item .rl-txt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-sub { display: block; font-size: 11px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.rl-section { padding: 5px 12px; font-size: 11px; font-weight: 600; border-top: 1px solid #374151; background: #0d1420; }
+.rl-section-modal  { color: #c4b5fd; }              /* violet — "flow/modal step", distinct from the red broken bucket */
+.rl-section-broken { color: #f87171; }
+.rl-section-suppressed { color: #9ca3af; }   /* grey — base boxes parked behind the modal */
+.rl-pill { font-size: 10px; padding: 1px 6px; border-radius: 8px; align-self: center; text-transform: uppercase; }
+/* needs-human family (amber/orange): open proposal awaiting triage, question awaiting an answer */
+.rl-pill-open-proposal { background: #f59e0b; color: #111; }
+.rl-pill-question { background: #ea580c; color: #fff; }
+/* queued-for-agent: open instruction, already actionable — distinct blue, not amber */
+.rl-pill-open-instruction { background: #38bdf8; color: #111; }
+.rl-pill-approved, .rl-pill-edited { background: #16a34a; color: #fff; }
+.rl-pill-rejected { background: #4b5563; color: #d1d5db; }
+.rl-pill-implemented { background: #2563eb; color: #fff; } .rl-pill-verified { background: #0d9488; color: #fff; }
+.rl-detail { border-top: 1px solid #374151; padding: 10px 12px; max-height: 40%; overflow-y: auto; }
+.rl-detail h4 { margin: 0 0 6px; font-size: 12px; color: #9ca3af; }
+.rl-cur { color: #fca5a5; } .rl-pro { color: #86efac; }
+.rl-thread { margin-top: 8px; } .rl-thread div { margin: 3px 0; color: #d1d5db; }
+.rl-thread .rl-author { color: #9ca3af; font-size: 11px; margin-right: 6px; }
+.rl-edit { color: #5eead4; }
+.rl-thread .rl-ts { color: #6b7280; font-size: 11px; margin-right: 6px; }
+.rl-hints { padding: 6px 12px; border-top: 1px solid #374151; color: #6b7280; font-size: 11px; }
+.rl-orph-head { padding: 6px 12px; color: #f87171; font-size: 11px; border-top: 1px solid #374151; }
+
+/* page index modal */
+#__redline_pageindex { position: fixed; inset: 10% 20%; z-index: 2147483003; background: #111827; color: #e5e7eb;
+  border-radius: 10px; box-shadow: 0 8px 40px rgba(0,0,0,.6); overflow-y: auto; padding: 16px; }
+.rl-pi-row { padding: 8px 10px; border-bottom: 1px solid #1f2937; cursor: pointer; display: flex; justify-content: space-between; }
+.rl-pi-row:hover { background: #1f2937; }
+
+/* draw mode */
+body.rl-drawing, body.rl-drawing * { cursor: crosshair !important; }
+#__redline_capture { position: fixed; inset: 0; z-index: 2147483004; }
+.rl-rubber { position: absolute; border: 2px dashed #dc2626; background: rgba(220, 38, 38, .08); }
+#__redline_draw_input { position: absolute; z-index: 2147483005; background: #111827; padding: 8px;
+  border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.5); display: flex; gap: 6px; }
+#__redline_draw_input input { width: 320px; background: #1f2937; border: 1px solid #374151; color: #e5e7eb;
+  border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+#__redline_draw_input select { background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 6px; }
+.rl-drawhint { position: fixed; bottom: 70px; right: 16px; z-index: 2147483001; background: #111827; color: #e5e7eb;
+  padding: 8px 12px; border-radius: 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
