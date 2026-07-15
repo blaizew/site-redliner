@@ -5,9 +5,12 @@
 
   let visible = false;
   let selIdx = 0;
+  let selectedId = null;
   let query = "";
+  let theme = "dark";
   let marginApplied = false;
   let savedMarginRight = "";
+  const collapsed = {};
   // Gate for auto-scrolling the selected row into view: only scroll when the
   // selected annotation's id actually changed since the last render (keyboard
   // nav, click, or openPanelAt), never on a poll/mutation re-render that
@@ -15,32 +18,34 @@
   let lastScrolledId = null;
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  // Compact local-time formatter for thread timestamps (ISO string → e.g. "Jul 7, 5:21 PM").
   const fmtTs = (ts) => { if (!ts) return ""; const d = new Date(ts); return isNaN(d.getTime()) ? "" : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); };
   const isTyping = (e) => /INPUT|TEXTAREA|SELECT/.test(e.target.tagName || "") || e.target.isContentEditable;
 
-  // A rel-anchored orphan (has anchor.rel + a captured refText) is not broken —
-  // it's a box drawn on a modal/flow step whose container isn't mounted right now.
-  // Distinguish it from a genuinely-broken anchor (a text/selector that failed to
-  // match on a fully-rendered page), which is what actually needs attention.
+  const STATUS_GROUPS = [
+    ["triage", "Triage", "#D9932E"],
+    ["queued", "Queued", "#3E82E6"],
+    ["question", "Question", "#9B6BE0"],
+    ["approved", "Approved", "#3FA45A"],
+    ["edited", "Edited", "#17A2A8"],
+    ["implemented", "Implemented", "#5E6BE0"],
+    ["verified", "Verified", "#2E9E6B"],
+    ["rejected", "Rejected", "#CB5C6B"],
+  ];
+  const STATUS_COLORS = STATUS_GROUPS.reduce((acc, [key, , color]) => { acc[key] = color; return acc; }, {});
+  const ORPHAN_COLORS = { modal: "#9B6BE0", broken: "#CB5C6B", suppressed: "#686A73" };
+
   const isModalScoped = (a) => {
     const an = a.anchor || {};
     return !!(an.rel && (an.refText || "").trim());
   };
   const refTextOf = (a) => ((a.anchor && a.anchor.refText) || "").trim();
 
-  // Which of the three list sections a row belongs to, given the current render's
-  // pageNumbers/orphans. Placed rows are numbered; unresolved rows split by classifier.
-  const sectionOf = (a) =>
-    RL.pageNumbers.has(a.id) ? "placed"
-    : (RL.suppressed && RL.suppressed.some((s) => s.id === a.id)) ? "suppressed"
-    : isModalScoped(a) ? "modal"
-    : "broken";
+  const statusKey = (a) => {
+    if (a.status === "open") return a.kind === "instruction" ? "queued" : "triage";
+    if (a.status === "question") return "question";
+    return a.status || "queued";
+  };
 
-  // "open" is shared by two opposite owners — an agent proposal awaiting the human's
-  // triage, and a human instruction queued for the agent — so derive a kind-aware
-  // display label here; the underlying status value is unchanged (see pillClass
-  // below for the matching kind-aware color split).
   const statusLabel = (a) => {
     if (a.status === "open" && a.kind === "instruction") return "queued";
     if (a.status === "open" && a.kind === "proposal") return "triage";
@@ -48,34 +53,137 @@
     return a.status;
   };
 
-  // Color bucket for the pill: an open proposal (claude-authored, awaiting the
-  // human's approve/edit/reject) and a question (agent asked, awaiting the
-  // human's answer) both need the human's attention right now, so both render
-  // in the amber/orange "needs-human" family. An open instruction is already
-  // queued for the agent to execute, so it gets a distinctly different (blue)
-  // color rather than sharing "open"'s amber. Every other status keeps its
-  // existing rl-pill-<status> class/color unchanged.
-  const pillClass = (a) => {
-    if (a.status === "open") return a.kind === "instruction" ? "rl-pill-open-instruction" : "rl-pill-open-proposal";
-    return "rl-pill-" + a.status;
+  const titleOf = (a) => (a.body && (a.body.current || a.body.instruction)) || (a.anchor && a.anchor.text) || a.id;
+
+  const sectionOf = (a) =>
+    RL.pageNumbers.has(a.id) ? "placed"
+    : (RL.suppressed && RL.suppressed.some((s) => s.id === a.id)) ? "suppressed"
+    : isModalScoped(a) ? "modal"
+    : "broken";
+
+  const annoMatches = (a) => {
+    if (!query) return true;
+    return JSON.stringify(a).toLowerCase().includes(query.toLowerCase());
   };
 
-  // Fixed legend order + colors for the counts bar — mirrors pillClass's
-  // buckets exactly (triage = open+proposal, queued = open+instruction) so
-  // the counts bar, list pills, and on-page box colors read as one system.
-  // Every bucket always renders, even at 0 — the bar doubles as a legend.
-  const COUNT_BUCKETS = [
-    ["triage", "#f59e0b"],
-    ["queued", "#38bdf8"],
-    ["question", "#ea580c"],
-    ["approved", "#16a34a"],
-    ["edited", "#16a34a"],
-    ["rejected", "#4b5563"],
-    ["implemented", "#2563eb"],
-    ["verified", "#0d9488"],
-  ];
+  const placedAnnos = () => RL.forPage()
+    .filter((a) => RL.pageNumbers.has(a.id) && annoMatches(a))
+    .sort((a, b) => RL.pageNumbers.get(a.id) - RL.pageNumbers.get(b.id));
+
+  function buildGroups(includeCollapsedRows) {
+    const buckets = STATUS_GROUPS.map(([key, label, color]) => ({ id: "status-" + key, key, label, color, rows: [] }));
+    const byKey = new Map(buckets.map((g) => [g.key, g]));
+    for (const a of placedAnnos()) {
+      const group = byKey.get(statusKey(a));
+      if (group) group.rows.push(a);
+    }
+    const groups = buckets.filter((g) => g.rows.length);
+    const modal = RL.orphans.filter(isModalScoped).filter(annoMatches);
+    const broken = RL.orphans.filter((a) => !isModalScoped(a)).filter(annoMatches);
+    const suppressed = (RL.suppressed || []).filter(annoMatches);
+    if (modal.length) groups.push({ id: "orphan-modal", key: "modal", label: "Flow / modal steps", color: ORPHAN_COLORS.modal, rows: modal });
+    if (broken.length) groups.push({ id: "orphan-broken", key: "broken", label: "Orphaned — anchor not found", color: ORPHAN_COLORS.broken, rows: broken });
+    if (suppressed.length) groups.push({ id: "orphan-suppressed", key: "suppressed", label: "Behind the open modal", color: ORPHAN_COLORS.suppressed, rows: suppressed });
+    if (!includeCollapsedRows) return groups;
+    return groups.map((g) => ({ ...g, visibleRows: collapsed[g.id] ? [] : g.rows }));
+  }
+
+  const listAnnos = () => buildGroups(true).flatMap((g) => g.visibleRows);
+  const allGroupedAnnos = () => buildGroups(false).flatMap((g) => g.rows);
+
+  function expandGroupFor(id) {
+    const group = buildGroups(false).find((g) => g.rows.some((a) => a.id === id));
+    if (group) collapsed[group.id] = false;
+  }
+
+  const mutate = (id, fn) =>
+    RL.put((doc) => {
+      const a = doc.annotations.find((x) => x.id === id);
+      if (a) { fn(a); a.updatedAt = new Date().toISOString(); }
+    });
+
+  const targetGroupId = (a, status) => "status-" + (status === "open" ? (a.kind === "instruction" ? "queued" : "triage") : status);
+
+  const toggleStatus = (id, to) => {
+    const current = allGroupedAnnos().find((a) => a.id === id);
+    if (current) collapsed[targetGroupId(current, current.status === to ? (current._undoStatus || "open") : to)] = false;
+    return mutate(id, (a) => {
+      if (a.status === to) { a.status = (a._undoStatus != null ? a._undoStatus : "open"); delete a._undoStatus; }
+      else { a._undoStatus = a.status; a.status = to; }
+    });
+  };
+
+  const editAnno = (a) => {
+    if (a.kind === "proposal") {
+      const txt = prompt("Replacement text:", a.editedText || (a.body && a.body.proposed) || "");
+      if (txt != null) {
+        collapsed["status-edited"] = false;
+        mutate(a.id, (x) => { x.status = "edited"; x.editedText = txt; });
+      }
+    } else if (a.author === RL.cfg.author) {
+      const txt = prompt("Instruction:", (a.body && a.body.instruction) || "");
+      if (txt != null) mutate(a.id, (x) => { x.body = x.body || {}; x.body.instruction = txt; });
+    }
+  };
+
+  const answerAnno = (a) => {
+    const txt = prompt("Answer:");
+    if (txt != null) mutate(a.id, (x) => {
+      x.thread = x.thread || [];
+      x.thread.push({ author: RL.cfg.author, ts: new Date().toISOString(), text: txt });
+      x.status = x.prevStatus || "open";
+      delete x.prevStatus;
+    });
+  };
+
+  const commentAnno = (a) => {
+    const txt = prompt("Comment:");
+    if (txt) mutate(a.id, (x) => {
+      x.thread = x.thread || [];
+      x.thread.push({ author: RL.cfg.author, ts: new Date().toISOString(), text: txt });
+    });
+  };
+
+  const deleteAnno = (a) => {
+    if (a.author === RL.cfg.author && confirm("Delete " + a.id + "?")) {
+      RL.put((doc) => { doc.annotations = doc.annotations.filter((x) => x.id !== a.id); });
+    }
+  };
+
+  const actionHandlers = {
+    approve: (a) => toggleStatus(a.id, "approved"),
+    edit: editAnno,
+    reject: (a) => toggleStatus(a.id, "rejected"),
+    reopen: (a) => toggleStatus(a.id, "open"),
+    verify: (a) => {
+      collapsed[a.status === "verified" ? "status-implemented" : "status-verified"] = false;
+      mutate(a.id, (x) => { x.status = x.status === "verified" ? "implemented" : "verified"; });
+    },
+    answer: answerAnno,
+    comment: commentAnno,
+    delete: deleteAnno,
+  };
+
+  function runAction(name, a) {
+    if (!a || !actionHandlers[name]) return;
+    actionHandlers[name](a);
+  }
+
+  function actionSet(a) {
+    if (!a) return [];
+    if (a.status === "implemented") return [["verify", "Verify", "pos"], ["reopen", "Reopen", "neutral"], ["comment", "Comment", "neutral"]];
+    if (a.status === "verified") return [["reopen", "Reopen", "neutral"], ["comment", "Comment", "neutral"]];
+    if (a.status === "rejected") return [["reopen", "Reopen", "neutral"]];
+    if (a.status === "question") return [["answer", "Answer", "pos"], ["reject", "Reject", "neg"]];
+    return [["approve", "Approve", "pos"], ["edit", "Edit", "neutral"], ["reject", "Reject", "neg"]];
+  }
 
   RL.initPanel = () => {
+    try {
+      const stored = localStorage.getItem("rl-theme");
+      theme = stored === "light" ? "light" : "dark";
+    } catch { theme = "dark"; }
+
     const fab = document.createElement("button");
     fab.id = "__redline_fab";
     fab.textContent = "✎";
@@ -96,54 +204,35 @@
   RL.togglePanel = () => { visible = !visible; RL.renderPanel(); };
   RL.openPanelAt = (id) => {
     visible = true;
-    const i = listAnnos().findIndex((a) => a.id === id);
+    selectedId = id;
+    expandGroupFor(id);
+    const i = allGroupedAnnos().findIndex((a) => a.id === id);
     if (i >= 0) selIdx = i;
     RL.renderPanel();
   };
 
-  // Panel order = badge order, then flow/modal-step orphans, then broken orphans;
-  // filtered by the search query. The three groups are CONTIGUOUS so renderPanel
-  // can drop a section divider at each boundary (see below).
-  const listAnnos = () => {
-    const page = RL.forPage();
-    const placed = page
-      .filter((a) => RL.pageNumbers.has(a.id))
-      .sort((a, b) => RL.pageNumbers.get(a.id) - RL.pageNumbers.get(b.id));
-    const modal = RL.orphans.filter(isModalScoped);
-    const broken = RL.orphans.filter((a) => !isModalScoped(a));
-    const suppressed = RL.suppressed || [];
-    const all = placed.concat(modal, broken, suppressed);
-    if (!query) return all;
-    const q = query.toLowerCase();
-    return all.filter((a) => JSON.stringify(a).toLowerCase().includes(q));
-  };
-
-  const mutate = (id, fn) =>
-    RL.put((doc) => {
-      const a = doc.annotations.find((x) => x.id === id);
-      if (a) { fn(a); a.updatedAt = new Date().toISOString(); }
-    });
-
-  // Reversible status keys: pressing a status key applies its target status and stashes the
-  // prior status in `_undoStatus`; pressing the SAME key again (item already at that status)
-  // reverts to the stashed status — a one-step undo for a mis-press. Persisted in the doc, so
-  // it also survives a reload. Only the most recent status change is undoable.
-  const toggleStatus = (id, to) => mutate(id, (a) => {
-    if (a.status === to) { a.status = (a._undoStatus != null ? a._undoStatus : "open"); delete a._undoStatus; }
-    else { a._undoStatus = a.status; a.status = to; }
-  });
+  function selectedFromList(list) {
+    if (selectedId) {
+      const i = list.findIndex((a) => a.id === selectedId);
+      if (i >= 0) {
+        selIdx = i;
+        return list[i];
+      }
+    }
+    selIdx = Math.max(0, Math.min(selIdx, list.length - 1));
+    const sel = list[selIdx] || null;
+    selectedId = sel ? sel.id : null;
+    return sel;
+  }
 
   function onKey(e) {
     if (RL.shot) return;
-    if (e.isComposing || e.keyCode === 229) return; // ignore IME / dictation composition keystrokes
-    // Never hijack browser/OS chords — Cmd+R / Ctrl+R reload, Cmd+Shift+R hard reload, Cmd+L, etc.
-    // Single-key triage shortcuts (a/r/e/v/x/…) must fire ONLY with no modifier held, or a reload
-    // keypress lands as "reject" on the selected item. No preventDefault: let the chord through.
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "`" && !isTyping(e)) { e.preventDefault(); RL.togglePanel(); return; }
     if (!visible || isTyping(e)) return;
     const list = listAnnos();
-    const sel = list[selIdx];
+    const sel = selectedFromList(list);
     const k = e.key;
     const stop = () => { e.preventDefault(); e.stopPropagation(); };
 
@@ -153,68 +242,90 @@
       else RL.togglePanel();
       return;
     }
-    if (k === "j" || k === "ArrowDown") { stop(); selIdx = Math.min(selIdx + 1, list.length - 1); RL.renderPanel(); return; }
-    if (k === "k" || k === "ArrowUp") { stop(); selIdx = Math.max(selIdx - 1, 0); RL.renderPanel(); return; }
+    if (k === "j" || k === "ArrowDown") { stop(); selIdx = Math.min(selIdx + 1, list.length - 1); selectedId = list[selIdx] && list[selIdx].id; RL.renderPanel(); return; }
+    if (k === "k" || k === "ArrowUp") { stop(); selIdx = Math.max(selIdx - 1, 0); selectedId = list[selIdx] && list[selIdx].id; RL.renderPanel(); return; }
     if (k === "/") { stop(); const inp = RL.els.panel.querySelector("input"); if (inp) inp.focus(); return; }
     if (k === "p") { stop(); renderPageIndex(); return; }
     if (!sel) return;
 
     if (k === "Enter") { stop(); RL.flashBox(sel.id); return; }
-    if (k === "a" && sel.kind === "proposal") { stop(); toggleStatus(sel.id, "approved"); return; }
-    if (k === "r" && sel.kind === "proposal") { stop(); toggleStatus(sel.id, "rejected"); return; }
-    if (k === "e") {
-      stop();
-      if (sel.kind === "proposal") {
-        // Pre-fill with the current edit (or the proposal if not yet edited) so pressing `e`
-        // again re-opens the previous edit text for refinement. To revert an edit, use `u`.
-        const txt = prompt("Replacement text:", sel.editedText || (sel.body && sel.body.proposed) || "");
-        if (txt != null) mutate(sel.id, (a) => { a.status = "edited"; a.editedText = txt; });
-      } else if (sel.author === RL.cfg.author) {
-        const txt = prompt("Instruction:", (sel.body && sel.body.instruction) || "");
-        if (txt != null) mutate(sel.id, (a) => { a.body.instruction = txt; });
+    if (k === "a") { stop(); runAction("approve", sel); return; }
+    if (k === "r") { stop(); runAction("reject", sel); return; }
+    if (k === "e") { stop(); runAction("edit", sel); return; }
+    if (k === "u") { stop(); runAction("reopen", sel); return; }
+    if (k === "v" && (sel.status === "implemented" || sel.status === "verified")) { stop(); runAction("verify", sel); return; }
+    if (k === "o" && sel.status === "question") { stop(); runAction("answer", sel); return; }
+    if (k === "c") { stop(); runAction("comment", sel); return; }
+    if (k === "x") { stop(); runAction("delete", sel); return; }
+  }
+
+  function prInfo(a) {
+    const texts = (a.thread || []).map((c) => c.text || "");
+    const all = texts.join(" ");
+    const pr = /PR ?#?(\d+)/i.exec(all);
+    if (!pr) return null;
+    const state = /Merged/i.test(all) ? "Merged" : (/Mergeable/i.test(all) ? "Mergeable" : "");
+    const hash = /@?\s*([a-f0-9]{7,40})\b/i.exec(all);
+    return { num: pr[1], state, hash: hash ? hash[1].slice(0, 7) : "" };
+  }
+
+  function detailHtml(sel) {
+    if (!sel) return "";
+    const sk = statusKey(sel);
+    const target = [sel.surface, sel.route].filter(Boolean).join(" · ") +
+      ((sel.anchor && sel.anchor.text) ? " › " + sel.anchor.text : "") +
+      (sel.hint ? " ⓘ " + sel.hint : "");
+    const thread = sel.thread && sel.thread.length
+      ? '<div class="rl-thread">' + sel.thread.map((c) => {
+        const ts = fmtTs(c.ts);
+        return `<div class="rl-thread-row"><span class="rl-author">${esc(c.author)}</span>${ts ? `<span class="rl-ts">${esc(ts)}</span>` : ""}<span class="rl-thread-text">${esc(c.text)}</span></div>`;
+      }).join("") + "</div>" : "";
+    const actions = actionSet(sel).map(([name, label, tone]) =>
+      `<button type="button" class="rl-action rl-action-${tone}" data-action="${name}">${esc(label)}</button>`).join("");
+    const header = `<div class="rl-detail-head">
+      <span class="rl-detail-id">${esc(sel.id)}</span>
+      <span class="rl-detail-meta"> · ${esc(sel.kind || "instruction")} · ${esc(sel.author || "")}</span>
+      <span class="rl-status-pill rl-status-${esc(sk)}"><span></span>${esc(statusLabel(sel))}</span>
+    </div>`;
+    const crumb = target ? `<div class="rl-target">${esc(target)}</div>` : "";
+
+    let variant = "";
+    if (sel.kind === "proposal") {
+      const proposed = (sel.body && sel.body.proposed) || "";
+      const edited = sel.editedText || "";
+      variant += sel.body && sel.body.current ? `<div class="rl-diff rl-diff-minus"><b>−</b><span>${esc(sel.body.current)}</span></div>` : "";
+      if (proposed) variant += `<div class="rl-diff rl-diff-plus"><b>+</b><span>${esc(proposed)}</span></div>`;
+      if (edited && edited !== proposed) variant += `<div class="rl-edit">✎ your edit: ${esc(edited)}</div>`;
+      if (sel.why) variant += `<div class="rl-why"><b>claude</b>${esc(sel.why)}</div>`;
+    } else {
+      const latest = (sel.thread || []).slice().reverse().find((c) => c.text) || null;
+      const info = prInfo(sel);
+      variant += sel.body && sel.body.instruction ? `<div class="rl-title">${esc(sel.body.instruction)}</div>` : "";
+      if (latest) variant += `<div class="rl-message"><b>${esc(latest.author || "")}</b>${esc(latest.text || "")}</div>`;
+      if (info) {
+        variant += `<div class="rl-prchip"><span>⎇</span><b>PR #${esc(info.num)}</b>${info.state ? `<em><i></i>${esc(info.state)}</em>` : ""}${info.hash ? `<small>@ ${esc(info.hash)}</small>` : ""}</div>`;
       }
-      return;
     }
-    if (k === "u") { stop(); toggleStatus(sel.id, "open"); return; }
-    if (k === "v" && (sel.status === "implemented" || sel.status === "verified")) { stop(); mutate(sel.id, (a) => { a.status = a.status === "verified" ? "implemented" : "verified"; }); return; }
-    if (k === "o" && sel.status === "question") {
-      stop();
-      const txt = prompt("Answer:");
-      if (txt != null) mutate(sel.id, (a) => {
-        a.thread = a.thread || [];
-        a.thread.push({ author: RL.cfg.author, ts: new Date().toISOString(), text: txt });
-        a.status = a.prevStatus || "open";
-        delete a.prevStatus;
-      });
-      return;
-    }
-    if (k === "c") {
-      stop();
-      const txt = prompt("Comment:");
-      if (txt) mutate(sel.id, (a) => {
-        a.thread = a.thread || [];
-        a.thread.push({ author: RL.cfg.author, ts: new Date().toISOString(), text: txt });
-      });
-      return;
-    }
-    if (k === "x" && sel.author === RL.cfg.author) {
-      stop();
-      if (confirm("Delete " + sel.id + "?")) RL.put((doc) => { doc.annotations = doc.annotations.filter((a) => a.id !== sel.id); });
-      return;
-    }
+    return `<div class="rl-detail">${header}${crumb}${variant}${thread}<div class="rl-actions">${actions}</div></div>`;
+  }
+
+  function footerHtml() {
+    const commands = [["↑↓", "move"], ["↵", "jump"], ["a", "approve"], ["e", "edit"], ["r", "reject"], ["u", "reopen"], ["o", "answer"], ["c", "comment"], ["v", "verify"], ["x", "delete"], ["b", "draw"], ["p", "pages"], ["/", "search"], ["`", "close"]];
+    return `<div class="rl-command-footer">${commands.map(([key, label]) => `<span><kbd>${esc(key)}</kbd>${esc(label)}</span>`).join("")}</div>`;
   }
 
   RL.renderPanel = () => {
     const panel = RL.els.panel;
     if (!panel) return;
     panel.classList.toggle("rl-hidden", !visible);
+    panel.dataset.rlTheme = theme;
 
-    // Panel visibility push: shove the page content over so the panel doesn't
-    // cover it. Guarded by marginApplied so repeated renderPanel() calls while
-    // visible can't stack/leak the margin.
+    const fab = document.getElementById("__redline_fab");
+    if (fab) fab.style.display = visible ? "none" : "";
+
     if (visible && !marginApplied) {
       savedMarginRight = document.body.style.marginRight;
-      document.body.style.marginRight = "380px";
+      document.body.style.marginRight = "460px";
       marginApplied = true;
       window.dispatchEvent(new Event("resize"));
     } else if (!visible && marginApplied) {
@@ -224,94 +335,72 @@
     }
 
     if (!visible) return;
-    const list = listAnnos();
-    selIdx = Math.max(0, Math.min(selIdx, list.length - 1));
-    // Bucket the same way pillClass does: "open" splits by kind into
-    // triage/queued so the legend matches the pill colors exactly.
-    const counts = { triage: 0, queued: 0, question: 0, approved: 0, edited: 0, rejected: 0, implemented: 0, verified: 0 };
-    for (const a of RL.forPage()) {
-      if (a.status === "open") counts[a.kind === "instruction" ? "queued" : "triage"]++;
-      else if (counts[a.status] != null) counts[a.status]++;
-    }
+    const groups = buildGroups(true);
+    const list = groups.flatMap((g) => g.visibleRows);
+    const sel = selectedFromList(list);
 
-    // Preserve search-input focus + exact caret across the innerHTML rebuild below.
     const prevInput = panel.querySelector("input");
     const hadFocus = !!prevInput && document.activeElement === prevInput;
     const selStart = hadFocus ? prevInput.selectionStart : null;
     const selEnd = hadFocus ? prevInput.selectionEnd : null;
 
-    const modalCount = list.filter((a) => sectionOf(a) === "modal").length;
-    const brokenCount = list.filter((a) => sectionOf(a) === "broken").length;
-    const suppressedCount = list.filter((a) => sectionOf(a) === "suppressed").length;
-
-    let prevSection = null;
-    const items = list.map((a, i) => {
-      const section = sectionOf(a);
-      let divider = "";
-      if (section !== prevSection && section === "modal") {
-        divider = `<div class="rl-section rl-section-modal">◫ Flow / modal steps (${modalCount}) · open the flow to reveal</div>`;
-      } else if (section !== prevSection && section === "broken") {
-        divider = `<div class="rl-section rl-section-broken">⚠ Orphaned — anchor not found (${brokenCount})</div>`;
-      } else if (section !== prevSection && section === "suppressed") {
-        divider = `<div class="rl-section rl-section-suppressed">▤ Behind the open modal (${suppressedCount}) · base-page boxes, hidden while the modal is up</div>`;
-      }
-      prevSection = section;
-
-      const n = RL.pageNumbers.has(a.id) ? RL.pageNumbers.get(a.id) : "—";
-      const label = (a.body && (a.body.current || a.body.instruction)) || (a.anchor && a.anchor.text) || a.id;
-      const sub = section === "modal" && refTextOf(a)
-        ? `<span class="rl-sub">◫ ${esc(refTextOf(a))}</span>` : "";
-      return `${divider}<div class="rl-item ${i === selIdx ? "rl-sel" : ""}" data-i="${i}">
-        <span class="rl-num">${n}</span>
-        <div class="rl-txtwrap"><span class="rl-txt">${esc(label)}</span>${sub}</div>
-        <span class="rl-pill ${pillClass(a)}">${statusLabel(a)}</span></div>`;
+    let rowIdx = 0;
+    const groupHtml = groups.map((g) => {
+      const open = !collapsed[g.id];
+      const rows = open ? g.rows.map((a) => {
+        const i = rowIdx++;
+        const sk = statusKey(a);
+        const selected = a.id === (sel && sel.id);
+        const n = RL.pageNumbers.has(a.id) ? RL.pageNumbers.get(a.id) : "—";
+        const sub = sectionOf(a) === "modal" && refTextOf(a) ? `<span class="rl-sub">◫ ${esc(refTextOf(a))}</span>` : "";
+        return `<div class="rl-item ${selected ? "rl-sel" : ""} rl-row-status-${esc(sk)}" data-i="${i}" style="--rl-row-color:${esc(STATUS_COLORS[sk] || g.color)}">
+          <span class="rl-num">${esc(n)}</span>
+          <div class="rl-txtwrap"><span class="rl-txt">${esc(titleOf(a))}</span>${sub}</div>
+          ${a.kind === "proposal" ? '<span class="rl-proposal-tag">PROPOSAL</span>' : ""}
+        </div>`;
+      }).join("") : "";
+      return `<section class="rl-group">
+        <button type="button" class="rl-group-head ${open ? "rl-open" : ""}" data-group="${esc(g.id)}" style="--rl-group-color:${esc(g.color)}">
+          <span class="rl-chev">▸</span><span class="rl-dot"></span><span class="rl-group-label">${esc(g.label)}</span><span class="rl-group-count">${g.rows.length}</span>
+        </button>${rows}
+      </section>`;
     }).join("");
 
-    const sel = list[selIdx];
-    let detail = "";
-    if (sel) {
-      const rows = [];
-      rows.push(`<h4>${sel.id} · ${sel.kind} · ${esc(sel.author)} · ${statusLabel(sel)}${sel.hint ? " · " + esc(sel.hint) : ""}</h4>`);
-      if (sel.body && sel.body.current) rows.push(`<div class="rl-cur">− ${esc(sel.body.current)}</div>`);
-      // Show claude's proposal AND the human's edit (if any) so the full evolution is visible.
-      // editedText is what actually shipped, so surface it at EVERY status (not only while "edited").
-      if (sel.body && sel.body.proposed) rows.push(`<div class="rl-pro">+ ${esc(sel.body.proposed)}</div>`);
-      if (sel.editedText) rows.push(`<div class="rl-edit">✎ your edit: ${esc(sel.editedText)}</div>`);
-      if (sel.body && sel.body.instruction) rows.push(`<div>${esc(sel.body.instruction)}</div>`);
-      if (sel.why) rows.push(`<div>${esc(sel.why)}</div>`);
-      if (sel.thread && sel.thread.length) {
-        rows.push('<div class="rl-thread">' + sel.thread.map((c) => {
-          const ts = fmtTs(c.ts);
-          return `<div><span class="rl-author">${esc(c.author)}</span>${ts ? `<span class="rl-ts">${esc(ts)}</span>` : ""}${esc(c.text)}</div>`;
-        }).join("") + "</div>");
-      }
-      detail = `<div class="rl-detail">${rows.join("")}</div>`;
-    }
-
     panel.innerHTML = `
-      <div class="rl-panel-head"><input placeholder="/ search" value="${esc(query)}"><span>${list.length}</span></div>
-      <div class="rl-counts">${COUNT_BUCKETS.map(([label, color]) => `<span style="color:${color}">${label}:${counts[label]}</span>`).join("  ")}</div>
-      <div class="rl-list">${items}</div>${detail}
-      <div class="rl-hints">↑/↓ move · Enter jump · a approve · e edit/refine · r reject · u reopen · v verify · (a/r/u/v again = undo) · o answer · c comment · x delete yours · b draw: ⌥-click an element or drag a box · p pages · / search · \` close</div>`;
+      <div class="rl-panel-head">
+        <span class="rl-search-icon">⌕</span>
+        <input placeholder="Search reviews" value="${esc(query)}">
+        <span class="rl-count-pill">${allGroupedAnnos().length}</span>
+        <button type="button" class="rl-theme-toggle" aria-label="Toggle theme">
+          <span class="${theme === "dark" ? "rl-active" : ""}">☾</span><span class="${theme === "light" ? "rl-active" : ""}">☀</span>
+        </button>
+      </div>
+      <div class="rl-list">${groupHtml}</div>
+      ${detailHtml(sel)}
+      ${footerHtml()}`;
 
     const inp = panel.querySelector("input");
     if (hadFocus) { inp.focus(); inp.setSelectionRange(selStart, selEnd); }
-    inp.addEventListener("input", () => { query = inp.value; selIdx = 0; RL.renderPanel(); });
+    inp.addEventListener("input", () => { query = inp.value; selIdx = 0; selectedId = null; RL.renderPanel(); });
     inp.addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Escape" || ev.key === "Enter") ev.target.blur(); });
+    panel.querySelector(".rl-theme-toggle").addEventListener("click", () => {
+      theme = theme === "dark" ? "light" : "dark";
+      try { localStorage.setItem("rl-theme", theme); } catch {}
+      RL.renderPanel();
+    });
+    panel.querySelectorAll(".rl-group-head").forEach((el) =>
+      el.addEventListener("click", () => { collapsed[el.dataset.group] = !collapsed[el.dataset.group]; RL.renderPanel(); }));
     panel.querySelectorAll(".rl-item").forEach((el) =>
-      el.addEventListener("click", () => { selIdx = Number(el.dataset.i); RL.renderPanel(); const a = listAnnos()[selIdx]; if (a) RL.flashBox(a.id); }));
+      el.addEventListener("click", () => {
+        selIdx = Number(el.dataset.i);
+        const a = listAnnos()[selIdx];
+        selectedId = a && a.id;
+        RL.renderPanel();
+        if (a) RL.flashBox(a.id);
+      }));
+    panel.querySelectorAll(".rl-action").forEach((el) =>
+      el.addEventListener("click", () => { const a = selectedFromList(listAnnos()); runAction(el.dataset.action, a); }));
 
-    // Keep the selected row centered in the list — but only when the selection
-    // actually changed (see lastScrolledId comment above); a poll/mutation
-    // re-render that redraws the same selection must not fight manual
-    // scrolling. Computed via getBoundingClientRect deltas rather than
-    // item.offsetTop: .rl-list is position:static, so an .rl-item's
-    // offsetParent is actually #__redline_panel (position:fixed) several
-    // levels up, not .rl-list — offsetTop would then include the head/counts
-    // height above the list and center wrong. The rect delta is exact
-    // regardless of the ancestor chain, and only ever mutates listEl.scrollTop
-    // (never window/body scroll), and the browser clamps the assignment to
-    // the valid scroll range for free at the top/bottom of the list.
     const curSelId = sel ? sel.id : null;
     if (curSelId !== lastScrolledId) {
       lastScrolledId = curSelId;
@@ -327,7 +416,7 @@
 
   function renderPageIndex() {
     const pi = RL.els.pageindex;
-    const groups = new Map(); // page → counts
+    const groups = new Map();
     for (const a of RL.doc.annotations) {
       const key = a.page || ((a.surface && a.route) ? `/${a.surface}#/${a.surface}/${a.route}` : "(unassigned)");
       if (!groups.has(key)) groups.set(key, { total: 0, open: 0 });
