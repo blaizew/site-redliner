@@ -34,6 +34,7 @@ a local dev build with `--target http://localhost:5173`.
 - **o** — answer a question · **c** — comment · **v** — mark verified · **x** — delete yours
 - **b** — draw mode: Option-click an element or drag a box, type the instruction — the action dropdown sets the export color (auto infers it from your verb)
 - **p** — page index (which pages still have open items)
+- **h** — view done: reveal the on-page boxes for verified/rejected findings (hidden by default so closed work doesn't clutter the page)
 
 Box colors: amber = open (a proposal awaiting your triage, or your instruction queued for the agent) · purple = question waiting on you · green = approved ·
 gray = rejected · blue = implemented · teal = verified.

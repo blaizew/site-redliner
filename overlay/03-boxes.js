@@ -2,6 +2,7 @@
 (() => {
   const RL = window.__REDLINE__;
   if (!RL) return;
+  const DONE_STATUSES = new Set(["verified", "rejected"]);
 
   // Normal-mode box color: mirrors 04-panel.js's pillClass bucketing — an
   // open proposal (needs the human's triage) and an open instruction
@@ -14,6 +15,10 @@
   };
 
   RL.initBoxes = () => {
+    if (RL.showDoneBoxes === undefined) {
+      try { RL.showDoneBoxes = localStorage.getItem("rl-show-done") === "1"; }
+      catch { RL.showDoneBoxes = false; }
+    }
     const layer = document.createElement("div");
     layer.id = "__redline_boxes";
     RL.els.root.appendChild(layer);
@@ -47,6 +52,12 @@
       schedule();
     });
     mo.observe(document.body, { childList: true, subtree: true });
+  };
+
+  RL.toggleDoneBoxes = () => {
+    RL.showDoneBoxes = !RL.showDoneBoxes;
+    try { localStorage.setItem("rl-show-done", RL.showDoneBoxes ? "1" : "0"); } catch {}
+    RL.renderBoxes();
   };
 
   RL.renderBoxes = () => {
@@ -170,6 +181,10 @@
     ordered.forEach((a, i) => {
       const n = i + 1;
       RL.pageNumbers.set(a.id, n);
+      // Done items (verified/rejected) keep their panel number but draw no on-page
+      // box unless the reviewer toggles them on (h). Never suppress in shot mode —
+      // export relies on the shot statuses filter, not this flag.
+      if (!RL.shot && !RL.showDoneBoxes && DONE_STATUSES.has(a.status)) return;
       const info = placed.get(a.id);
       const box = document.createElement("div");
       box.className =

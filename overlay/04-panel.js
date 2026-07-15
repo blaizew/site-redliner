@@ -246,6 +246,7 @@
     if (k === "k" || k === "ArrowUp") { stop(); selIdx = Math.max(selIdx - 1, 0); selectedId = list[selIdx] && list[selIdx].id; RL.renderPanel(); return; }
     if (k === "/") { stop(); const inp = RL.els.panel.querySelector("input"); if (inp) inp.focus(); return; }
     if (k === "p") { stop(); renderPageIndex(); return; }
+    if (k === "h") { stop(); if (RL.toggleDoneBoxes) RL.toggleDoneBoxes(); return; }
     if (!sel) return;
 
     if (k === "Enter") { stop(); RL.flashBox(sel.id); return; }
@@ -310,7 +311,7 @@
   }
 
   function footerHtml() {
-    const commands = [["↑↓", "move"], ["↵", "jump"], ["a", "approve"], ["e", "edit"], ["r", "reject"], ["u", "reopen"], ["o", "answer"], ["c", "comment"], ["v", "verify"], ["x", "delete"], ["b", "draw"], ["p", "pages"], ["/", "search"], ["`", "close"]];
+    const commands = [["↑↓", "move"], ["↵", "jump"], ["a", "approve"], ["e", "edit"], ["r", "reject"], ["u", "reopen"], ["o", "answer"], ["c", "comment"], ["v", "verify"], ["x", "delete"], ["b", "draw"], ["p", "pages"], ["h", "view done"], ["/", "search"], ["`", "close"]];
     return `<div class="rl-command-footer">${commands.map(([key, label]) => `<span><kbd>${esc(key)}</kbd>${esc(label)}</span>`).join("")}</div>`;
   }
 
