@@ -26,6 +26,31 @@ above still works: the repo folder is also a valid workspace because
 `config.json`, `annotations/`, and `export/` are gitignored. Point either mode at
 a local dev build with `--target http://localhost:5173`.
 
+## Starting a new project redline
+
+For anything you'll return to — an ongoing engagement, a recurring review — set up a
+dedicated **workspace folder** instead of running against the repo. The tool never holds
+project data; each redline runs against its own workspace. The one step that turns
+"scratch markup" into "a project" is the `WORKSPACE.md` (step 3).
+
+1. **Make a workspace folder outside this repo.** Keep client/project data out of the
+   tool's own repo.
+2. **Add `config.json`** (copy `config.example.json`): set `target`, `port`, `author`.
+3. **Write a `WORKSPACE.md` in the folder** — the project's own contract. `SKILL.md`
+   tells your agent to read it FIRST, and it extends/overrides the generic contract.
+   Copy `WORKSPACE.template.md` from this repo and fill in the headings: how to get past
+   the target's auth gate, the route/navigation map, the target repo's branch/PR/ticket
+   conventions, and your export format.
+4. **Start the server from the folder** (or `--workspace <dir>`). `annotations/` and
+   `export/` are created there; the annotations file is auto-named
+   `annotations/<target-host>.json`.
+5. **Log in once if the target is auth-gated.** Claude-in-Chrome drives your real Chrome,
+   so a session you're already signed into carries through; with the browse-multi headless
+   fallback, save a session cookie and pass it in. Cookies pass through the proxy either way.
+6. **Populate annotations** — mark up live (`b`), have your agent seed proposals ("Read
+   SKILL.md and process the redline annotations"), or import an existing audit backlog with
+   `tools/import-audit.js`.
+
 ## Using the overlay
 
 - **`** (backtick) — toggle the review panel
@@ -50,7 +75,8 @@ and process the redline annotations." SKILL.md is the full agent contract.
 
 ## Exporting for review (issue trackers etc.)
 
-1. Capture marked-up screenshots: navigate to
+1. Capture marked-up screenshots: drive a browser (Claude-in-Chrome, or browse-multi as a
+   headless fallback) to
    `localhost:4600/__redline/shot?statuses=all&to=<url-encoded path>` (e.g.
    `to=%2Fapp%23%2Fhome`), then screenshot the page it lands on.
    This stores shot mode in `sessionStorage` before redirecting in, so it

@@ -85,8 +85,10 @@ Statuses: open → (question ⇄) → approved | edited | rejected → implement
 
 1. Start the server against the target the changes shipped to. If the target is
    auth-gated, log in once through the proxy — cookies pass through, so the
-   session persists for headless capture too.
-2. For every surface/route that has decided items: drive a headless browser to
+   session persists for the capture pass (whether you drive the visible browser or
+   a headless one).
+2. For every surface/route that has decided items: drive a browser — Claude-in-Chrome
+   is the primary driver (browse-multi is a headless fallback) — to
    `localhost:4600/__redline/shot?statuses=all&to=<url-encoded path + hash>`
    (e.g. `to=%2Fapp%23%2Fhome`). This sets `sessionStorage.__redline_shot`
    and redirects into the app, so shot mode survives an app's own
@@ -103,6 +105,19 @@ Statuses: open → (question ⇄) → approved | edited | rejected → implement
      same-document navigation — the overlay bundle is NOT refetched. After the
      overlay code changes, force a real reload (`location.reload()`) or the tab
      keeps running the old bundle.
+   - CAPTURE GOTCHA (inner-scroll SPAs): many apps scroll inside a `height:100vh`
+     container rather than the document, and frameworks reset injected style hacks on
+     re-render — so a viewport-sized screenshot clips the page and container-expansion
+     tricks fail. If your capture tool can't take a true full-page (stitched) shot,
+     size the window TALL (e.g. 1440×2800) so all content fits without inner scroll;
+     one shot then captures everything (short pages just get harmless trailing
+     whitespace, which the tool can't auto-crop).
+   - NAVIGATION GOTCHA (SPA state reset): navigating by `location.hash` can snap a
+     single-page app back to its initial/splash state, losing the route you wanted.
+     Prefer the app's OWN client-side navigation — its router API or clicking its nav —
+     so it stays on the target screen; shot mode and persisted geometry survive it.
+     (Distinct from the bundle-staleness gotcha above, which is about overlay CODE
+     changes needing a real reload.)
    - The legacy `?__redline=shot` (and `#...`) query-param path still works standalone
      on any page that doesn't rewrite its URL on load; sessionStorage is just the
      activation path that also survives a rewrite.
