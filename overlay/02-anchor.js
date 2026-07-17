@@ -67,11 +67,20 @@
   RL.refTokens = refTokens;
   RL.refScore = refScore;
 
+  // Attribute-borne label of a form control: the value of a submit/button/reset
+  // input (its rendered label), else aria-label. Complements text-node matching —
+  // these controls have no text node carrying their visible label.
+  const attrLabelOf = (el) => {
+    if (el.tagName === "INPUT" && /^(submit|button|reset)$/i.test(el.type)) return el.value || "";
+    return el.getAttribute && (el.getAttribute("aria-label") || "");
+  };
+
   // Element containing the needle (overlay's own DOM excluded).
-  // Selection order: (1) exact match — a node whose trimmed textContent
-  // equals the needle wins immediately; it's unambiguous. (2) Otherwise the
-  // candidate with the SHORTEST trimmed textContent wins (ties keep the
-  // first encountered) — less surrounding text means a more specific node.
+  // Selection order: (1) exact match — a node whose trimmed textContent or
+  // attribute label equals the needle wins immediately; it's unambiguous.
+  // (2) Otherwise the candidate with the SHORTEST trimmed textContent/label
+  // wins (ties keep the first encountered) — less surrounding text means a
+  // more specific node.
   // This avoids prefix collisions: a short needle like "Your customers" is
   // also a substring of an unrelated, larger block ("Your customers move
   // money and hold...") that can appear earlier in the DOM than the actual
@@ -103,6 +112,19 @@
       if (trimmed.length < bestLen) {
         best = el;
         bestLen = trimmed.length;
+      }
+    }
+    for (const el of document.querySelectorAll('input[type=submit i],input[type=button i],input[type=reset i],[aria-label]')) {
+      if (el.closest("#__redline_root")) continue;
+      if (accept && !accept(el)) continue;
+      const rects = el.getClientRects();
+      if (rects.length === 0 || rects[0].width < 2 || rects[0].height < 2) continue;
+      const label = (attrLabelOf(el) || "").trim();
+      if (!label.includes(needle)) continue;
+      if (label === needle) return el;
+      if (label.length < bestLen) {
+        best = el;
+        bestLen = label.length;
       }
     }
     return best;
@@ -320,7 +342,7 @@
           if (!scopeOk(el)) continue;
           const rects = el.getClientRects();
           if (rects.length === 0 || rects[0].width < 2 || rects[0].height < 2) continue;
-          if (needle && !(el.textContent || "").includes(needle)) continue;
+          if (needle && !(el.textContent || "").includes(needle) && !(attrLabelOf(el) || "").includes(needle)) continue;
           cands.push(el);
         }
         const el = closestToRect(cands, an.rect, (x) => RL.rectOf(x));

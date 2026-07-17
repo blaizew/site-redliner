@@ -55,6 +55,7 @@ Statuses: open → (question ⇄) → approved | edited | rejected → implement
 - You CREATE `kind:"proposal"` items (author "claude", status "open") — always with
   anchor.text set to the EXACT on-screen source string, textJa (or the equivalent
   translation) from the app's i18n map when known, and body.current/proposed.
+  Attribute-labeled controls (a submit/button input's value, aria-label) match too; adding anchor.selector as well is still good belt-and-braces.
 - The human triages proposals (approved/edited/rejected, `u` reopens back to open) and CREATES
   `kind:"instruction"` items for you to execute.
 - You NEVER change a human's triage decision. You may append thread comments anywhere.
