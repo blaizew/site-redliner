@@ -175,6 +175,12 @@
     if (a.status === "verified") return [["reopen", "Reopen", "neutral"], ["comment", "Comment", "neutral"]];
     if (a.status === "rejected") return [["reopen", "Reopen", "neutral"]];
     if (a.status === "question") return [["answer", "Answer", "pos"], ["reject", "Reject", "neg"]];
+    if (a.kind !== "proposal") {
+      // Queued instructions are the human's own asks awaiting the agent — nothing to triage.
+      return a.author === RL.cfg.author
+        ? [["edit", "Edit", "neutral"], ["comment", "Comment", "neutral"], ["delete", "Delete", "neg"]]
+        : [["comment", "Comment", "neutral"]];
+    }
     return [["approve", "Approve", "pos"], ["edit", "Edit", "neutral"], ["reject", "Reject", "neg"]];
   }
 
@@ -250,8 +256,9 @@
     if (!sel) return;
 
     if (k === "Enter") { stop(); RL.flashBox(sel.id); return; }
-    if (k === "a") { stop(); runAction("approve", sel); return; }
-    if (k === "r") { stop(); runAction("reject", sel); return; }
+    const inSet = (name) => actionSet(sel).some((x) => x[0] === name);
+    if (k === "a") { stop(); if (inSet("approve")) runAction("approve", sel); return; }
+    if (k === "r") { stop(); if (inSet("reject")) runAction("reject", sel); return; }
     if (k === "e") { stop(); runAction("edit", sel); return; }
     if (k === "u") { stop(); runAction("reopen", sel); return; }
     if (k === "v" && (sel.status === "implemented" || sel.status === "verified")) { stop(); runAction("verify", sel); return; }
